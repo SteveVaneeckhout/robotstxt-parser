@@ -1,0 +1,11 @@
+This line has no colon
+Disallow: /pre-group-rule
+: no-key-just-value
+User-agent: *
+bad-line-no-colon
+Disallow: /secret
+User-agent:
+Disallow:
+Allow:
+Sitemap:
+X-Extension:

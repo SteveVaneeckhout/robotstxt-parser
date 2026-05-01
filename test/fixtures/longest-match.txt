@@ -1,0 +1,3 @@
+User-agent: foobot
+Allow: /example/page/
+Disallow: /example/page/disallowed.gif

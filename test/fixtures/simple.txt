@@ -1,0 +1,9 @@
+# Simple robots.txt
+User-agent: *
+Disallow: /private/
+Allow: /private/public/
+
+User-agent: googlebot
+Allow: /
+
+Sitemap: https://example.com/sitemap.xml

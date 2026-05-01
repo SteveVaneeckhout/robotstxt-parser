@@ -1,0 +1,9 @@
+Sitemap: https://example.com/sitemap.xml
+Sitemap: https://example.com/news.xml
+
+User-agent: *
+Disallow: /
+
+LLMS: https://example.com/llms.txt
+X-Custom: hello
+X-Custom: world

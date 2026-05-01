@@ -1,0 +1,5 @@
+User-agent: *
+Disallow: /*.gif$
+Disallow: /tmp/
+Allow: /tmp/public/
+Allow: /images/*.jpg
