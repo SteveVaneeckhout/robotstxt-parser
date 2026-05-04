@@ -1,6 +1,6 @@
 {
   "name": "robots-txt-parser",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "RFC 9309 compliant robots.txt parser and fetcher for Node.js",
   "files": [
     "dist"

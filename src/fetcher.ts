@@ -6,14 +6,13 @@ import {
 } from "./constants.js";
 import { parseContent } from "./parser.js";
 import { RobotsFile } from "./robots-file.js";
-import { type FetchOptions } from "./types.js";
+import { type FetchMeta, type FetchOptions } from "./types.js";
 
 interface ResolvedOptions {
   userAgent: string;
   maxRedirects: number;
   timeoutMs: number;
   maxSizeBytes: number;
-  signal: AbortSignal | undefined;
 }
 
 function resolveOptions(options?: FetchOptions): ResolvedOptions {
@@ -22,58 +21,71 @@ function resolveOptions(options?: FetchOptions): ResolvedOptions {
     maxRedirects: options?.maxRedirects ?? DEFAULT_MAX_REDIRECTS,
     timeoutMs: options?.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     maxSizeBytes: options?.maxSizeBytes ?? MAX_ROBOTS_BYTES,
-    signal: options?.signal,
   };
 }
 
-function robotsUrl(input: string | URL): URL {
-  const u = new URL(typeof input === "string" ? input : input.href);
-  return new URL("/robots.txt", u);
+function robotsUrl(siteUrl: string): URL {
+  return new URL("/robots.txt", siteUrl);
 }
 
-type FetchOutcome = { ok: true; response: Response } | { ok: false };
+interface FetchOutcome {
+  response: Response | null;
+  finalUrl: string;
+  httpStatus: number | null;
+  redirects: number;
+}
 
 async function fetchWithRedirectLimit(
   initialUrl: URL,
   opts: ResolvedOptions,
 ): Promise<FetchOutcome> {
   let currentUrl = initialUrl;
-  let redirectCount = 0;
+  let redirects = 0;
 
   while (true) {
-    const timeoutSignal = AbortSignal.timeout(opts.timeoutMs);
-    const signal =
-      opts.signal !== undefined ? AbortSignal.any([timeoutSignal, opts.signal]) : timeoutSignal;
-
     let response: Response;
     try {
       response = await globalThis.fetch(currentUrl.href, {
         redirect: "manual",
         headers: { "User-Agent": opts.userAgent },
-        signal,
+        signal: AbortSignal.timeout(opts.timeoutMs),
       });
     } catch {
-      return { ok: false };
+      return {
+        response: null,
+        finalUrl: currentUrl.href,
+        httpStatus: null,
+        redirects,
+      };
     }
 
     const { status } = response;
 
     if (status >= 300 && status < 400) {
-      if (redirectCount >= opts.maxRedirects) {
-        return { ok: false };
+      if (redirects >= opts.maxRedirects) {
+        return { response: null, finalUrl: currentUrl.href, httpStatus: status, redirects };
       }
       const location = response.headers.get("Location");
-      if (location === null) return { ok: false };
-      try {
-        currentUrl = new URL(location, currentUrl);
-      } catch {
-        return { ok: false };
+      if (location === null) {
+        return { response: null, finalUrl: currentUrl.href, httpStatus: status, redirects };
       }
-      redirectCount++;
+      let nextUrl: URL;
+      try {
+        nextUrl = new URL(location, currentUrl);
+      } catch {
+        return { response: null, finalUrl: currentUrl.href, httpStatus: status, redirects };
+      }
+      currentUrl = nextUrl;
+      redirects++;
       continue;
     }
 
-    return { ok: true, response };
+    return {
+      response,
+      finalUrl: currentUrl.href,
+      httpStatus: status,
+      redirects,
+    };
   }
 }
 
@@ -114,26 +126,36 @@ async function readBodyUpToLimit(response: Response, maxBytes: number): Promise<
   return decoder.decode(combined);
 }
 
-export async function fetchRobots(url: string | URL, options?: FetchOptions): Promise<RobotsFile> {
+export async function fetchRobots(siteUrl: string, options?: FetchOptions): Promise<RobotsFile> {
   const opts = resolveOptions(options);
-  const targetUrl = robotsUrl(url);
+  const targetUrl = robotsUrl(siteUrl);
   const outcome = await fetchWithRedirectLimit(targetUrl, opts);
 
-  if (!outcome.ok) {
-    return RobotsFile.createRestrictive();
+  const baseMeta: Omit<FetchMeta, "contentType"> = {
+    url: targetUrl.href,
+    finalUrl: outcome.finalUrl,
+    httpStatus: outcome.httpStatus,
+    redirects: outcome.redirects,
+  };
+
+  if (outcome.response === null) {
+    const meta: FetchMeta = { ...baseMeta, contentType: null };
+    return RobotsFile.createRestrictive(meta);
   }
 
   const { response } = outcome;
+  const contentType = response.headers.get("content-type");
+  const meta: FetchMeta = { ...baseMeta, contentType };
   const { status } = response;
 
   if (status >= 400 && status < 500) {
-    return RobotsFile.createPermissive();
+    return RobotsFile.createPermissive(meta);
   }
 
   if (status < 200 || status >= 300) {
-    return RobotsFile.createRestrictive();
+    return RobotsFile.createRestrictive(meta);
   }
 
   const content = await readBodyUpToLimit(response, opts.maxSizeBytes);
-  return new RobotsFile(parseContent(content));
+  return new RobotsFile(parseContent(content), meta);
 }

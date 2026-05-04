@@ -15,7 +15,7 @@ npm install robots-txt-parser
 ## Quick start
 
 ```ts
-import { parse, fetch } from "robots-txt-parser";
+import { parse, fetchRobots } from "robots-txt-parser";
 
 // Parse a string directly
 const robots = parse(`
@@ -30,22 +30,25 @@ robots.isAllowed("googlebot", "https://example.com/private/page"); // false
 robots.isAllowed("googlebot", "https://example.com/private/public/page"); // true
 robots.getSitemaps(); // ['https://example.com/sitemap.xml']
 
-// Fetch and parse from a URL
-const live = await fetch("https://example.com");
+// Fetch and parse — pass the site origin; /robots.txt is appended
+const live = await fetchRobots("https://example.com");
 live.isAllowed("mybot", "https://example.com/some/page");
+live.meta?.httpStatus; // 200, 404, etc. — or null if unreachable
 ```
 
 ## API
 
 ### `parse(content: string): RobotsFile`
 
-Parses a robots.txt string and returns a [`RobotsFile`](#robotsfile) instance. The entire string is parsed in memory; use [`fetch()`](#fetchurl-options-promiserobotfile) when downloading from the network so the 500 KiB size limit is enforced.
+Parses a robots.txt string and returns a [`RobotsFile`](#robotsfile) instance. The entire string is parsed in memory; use [`fetchRobots()`](#fetchrobotssiteurl-options-promiserobotsfile) when downloading from the network so the 500 KiB size limit is enforced.
+
+When you obtain a `RobotsFile` via `parse()`, its `meta` property is `null`.
 
 ---
 
-### `fetch(url: string | URL, options?: FetchOptions): Promise<RobotsFile>`
+### `fetchRobots(siteUrl, options?): Promise<RobotsFile>`
 
-Downloads the robots.txt at the root of the given URL's origin — e.g. passing `https://example.com/any/path` fetches `https://example.com/robots.txt` — then parses and returns it.
+Downloads the robots.txt at the root of the given URL's origin — e.g. passing `https://example.com/any/path` fetches `https://example.com/robots.txt` — then parses and returns it. **Never throws** for HTTP or network problems; the spec-mandated fallback is encoded in the returned `RobotsFile`, and the actual outcome is exposed via `meta`.
 
 HTTP behaviour follows RFC 9309:
 
@@ -54,23 +57,22 @@ HTTP behaviour follows RFC 9309:
 | 2xx                  | Parsed normally                                  |
 | 4xx                  | Permissive — `isAllowed` always returns `true`   |
 | 5xx or network error | Restrictive — `isAllowed` always returns `false` |
-| > 5 redirects        | Restrictive                                      |
+| > maxRedirects       | Restrictive                                      |
 
 **`FetchOptions`**
 
-| Option         | Type          | Default                   | Description                               |
-| -------------- | ------------- | ------------------------- | ----------------------------------------- |
-| `userAgent`    | `string`      | `'robots-txt-parser/1.0'` | `User-Agent` header sent with the request |
-| `maxRedirects` | `number`      | `5`                       | Maximum redirects to follow               |
-| `timeoutMs`    | `number`      | `10000`                   | Request timeout in milliseconds           |
-| `maxSizeBytes` | `number`      | `512 * 1024`              | Response body cap in bytes                |
-| `signal`       | `AbortSignal` | —                         | Optional abort signal for cancellation    |
+| Option         | Type     | Default                   | Description                               |
+| -------------- | -------- | ------------------------- | ----------------------------------------- |
+| `userAgent`    | `string` | `'robots-txt-parser/1.0'` | `User-Agent` header sent with the request |
+| `maxRedirects` | `number` | `5`                       | Maximum redirects to follow (0 disables)  |
+| `timeoutMs`    | `number` | `10000`                   | Request timeout in milliseconds           |
+| `maxSizeBytes` | `number` | `512 * 1024`              | Response body cap in bytes                |
 
 ---
 
 ### `RobotsFile`
 
-The object returned by both `parse()` and `fetch()`.
+The object returned by both `parse()` and `fetchRobots()`.
 
 #### `isAllowed(userAgent: string, url: string | URL): boolean`
 
@@ -110,6 +112,22 @@ The raw parsed groups, each containing `userAgents: string[]` and `rules: Rule[]
 #### `isRestrictive: boolean`
 
 `true` when the server returned a 5xx response or was unreachable (all paths are blocked).
+
+#### `meta: FetchMeta | null`
+
+Populated when the `RobotsFile` was produced by `fetchRobots()`; `null` when produced by `parse()`.
+
+```ts
+interface FetchMeta {
+  url: string; // the /robots.txt URL we requested
+  finalUrl: string; // URL after redirects (or last URL attempted on failure)
+  httpStatus: number | null; // HTTP status, or null if no response (timeout/DNS/etc.)
+  contentType: string | null;
+  redirects: number; // number of redirects followed
+}
+```
+
+You can use this to distinguish a real 200 OK with empty rules from a 404-derived permissive file, or to log/inspect what actually happened.
 
 ---
 
@@ -158,20 +176,6 @@ X-Custom: value2                               returns ['value1', 'value2']
 ```
 
 `Sitemap` lines do not terminate the current rule group, in accordance with RFC 9309 §2.2.4.
-
----
-
-## Cancellation
-
-```ts
-const controller = new AbortController();
-setTimeout(() => controller.abort(), 2000);
-
-const robots = await fetch("https://example.com", {
-  signal: controller.signal,
-});
-// If aborted, returns a restrictive RobotsFile rather than throwing
-```
 
 ---
 

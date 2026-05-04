@@ -19,5 +19,11 @@ export interface FetchOptions {
   maxRedirects?: number;
   timeoutMs?: number;
   maxSizeBytes?: number;
-  signal?: AbortSignal;
+}
+export interface FetchMeta {
+  url: string;
+  finalUrl: string;
+  httpStatus: number | null;
+  contentType: string | null;
+  redirects: number;
 }

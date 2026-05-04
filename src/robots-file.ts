@@ -1,31 +1,39 @@
 import { findBestMatch, extractNormalizedPath } from "./matcher.js";
-import { type Group, type RobotsFileData } from "./types.js";
+import { type FetchMeta, type Group, type RobotsFileData } from "./types.js";
 
 export class RobotsFile {
   readonly #data: RobotsFileData;
+  readonly meta: FetchMeta | null;
 
-  constructor(data: RobotsFileData) {
+  constructor(data: RobotsFileData, meta: FetchMeta | null = null) {
     this.#data = data;
+    this.meta = meta;
   }
 
-  static createPermissive(): RobotsFile {
-    return new RobotsFile({
-      groups: [],
-      sitemaps: [],
-      extensions: new Map(),
-      isAllRobotsDenied: false,
-      isPermissive: true,
-    });
+  static createPermissive(meta: FetchMeta | null = null): RobotsFile {
+    return new RobotsFile(
+      {
+        groups: [],
+        sitemaps: [],
+        extensions: new Map(),
+        isAllRobotsDenied: false,
+        isPermissive: true,
+      },
+      meta,
+    );
   }
 
-  static createRestrictive(): RobotsFile {
-    return new RobotsFile({
-      groups: [],
-      sitemaps: [],
-      extensions: new Map(),
-      isAllRobotsDenied: true,
-      isPermissive: false,
-    });
+  static createRestrictive(meta: FetchMeta | null = null): RobotsFile {
+    return new RobotsFile(
+      {
+        groups: [],
+        sitemaps: [],
+        extensions: new Map(),
+        isAllRobotsDenied: true,
+        isPermissive: false,
+      },
+      meta,
+    );
   }
 
   /**

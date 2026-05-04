@@ -2,26 +2,34 @@ import { findBestMatch, extractNormalizedPath } from "./matcher.js";
 import {} from "./types.js";
 export class RobotsFile {
   #data;
-  constructor(data) {
+  meta;
+  constructor(data, meta = null) {
     this.#data = data;
+    this.meta = meta;
   }
-  static createPermissive() {
-    return new RobotsFile({
-      groups: [],
-      sitemaps: [],
-      extensions: new Map(),
-      isAllRobotsDenied: false,
-      isPermissive: true,
-    });
+  static createPermissive(meta = null) {
+    return new RobotsFile(
+      {
+        groups: [],
+        sitemaps: [],
+        extensions: new Map(),
+        isAllRobotsDenied: false,
+        isPermissive: true,
+      },
+      meta,
+    );
   }
-  static createRestrictive() {
-    return new RobotsFile({
-      groups: [],
-      sitemaps: [],
-      extensions: new Map(),
-      isAllRobotsDenied: true,
-      isPermissive: false,
-    });
+  static createRestrictive(meta = null) {
+    return new RobotsFile(
+      {
+        groups: [],
+        sitemaps: [],
+        extensions: new Map(),
+        isAllRobotsDenied: true,
+        isPermissive: false,
+      },
+      meta,
+    );
   }
   /**
    * Returns true if the given user-agent is allowed to access the URL.

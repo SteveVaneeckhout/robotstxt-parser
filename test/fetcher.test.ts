@@ -41,10 +41,10 @@ describe("fetchRobots – URL construction", () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe("https://example.com/robots.txt");
   });
 
-  it("accepts a URL object as input", async () => {
+  it("works with a bare origin", async () => {
     stubFetch(makeResponse(200, "User-agent: *\nDisallow: /\n"));
     const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
-    await fetchRobots(new URL("https://example.com/page"));
+    await fetchRobots("https://example.com");
     expect(fetchMock.mock.calls[0]?.[0]).toBe("https://example.com/robots.txt");
   });
 });
@@ -151,7 +151,6 @@ describe("fetchRobots – redirects", () => {
   });
 
   it("returns restrictive when Location header contains an invalid URL", async () => {
-    // 'http:// spaces.com' is a URL that new URL() always rejects
     stubFetch(makeResponse(301, null, { Location: "http:// spaces.com" }));
     const f = await fetchRobots("https://example.com");
     expect(f.isRestrictive).toBe(true);
@@ -159,9 +158,14 @@ describe("fetchRobots – redirects", () => {
 
   it("respects custom maxRedirects option", async () => {
     const redirect = makeResponse(301, null, { Location: "https://example.com/robots.txt" });
-    // maxRedirects = 2 → fails on 3rd redirect response
     stubFetch(redirect, redirect, redirect);
     const f = await fetchRobots("https://example.com", { maxRedirects: 2 });
+    expect(f.isRestrictive).toBe(true);
+  });
+
+  it("maxRedirects: 0 disables redirect following", async () => {
+    stubFetch(makeResponse(301, null, { Location: "https://example.com/robots.txt" }));
+    const f = await fetchRobots("https://example.com", { maxRedirects: 0 });
     expect(f.isRestrictive).toBe(true);
   });
 });
@@ -186,9 +190,7 @@ describe("fetchRobots – body handling", () => {
   it("truncates body exceeding maxSizeBytes", async () => {
     const large = "User-agent: *\nDisallow: /\n" + "x".repeat(200);
     stubFetch(makeResponse(200, large));
-    // Small limit so the truncation path is exercised
     const f = await fetchRobots("https://example.com", { maxSizeBytes: 30 });
-    // Just verify it parsed without throwing
     expect(f).toBeDefined();
   });
 });
@@ -214,13 +216,6 @@ describe("fetchRobots – options", () => {
     expect(headers?.["User-Agent"]).toBe("my-bot/1.0");
   });
 
-  it("passes an AbortSignal through to the underlying fetch", async () => {
-    stubFetch(makeResponse(200, ""));
-    const controller = new AbortController();
-    await fetchRobots("https://example.com", { signal: controller.signal });
-    // Just confirm it didn't throw — signal composition is exercised
-  });
-
   it("uses all custom options when provided", async () => {
     const redirect = makeResponse(301, null, { Location: "https://example.com/robots.txt" });
     stubFetch(redirect, makeResponse(200, ""));
@@ -231,5 +226,60 @@ describe("fetchRobots – options", () => {
       maxSizeBytes: 1024,
     });
     expect(f).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Meta
+// ---------------------------------------------------------------------------
+
+describe("fetchRobots – meta", () => {
+  it("sets meta on a 200 response", async () => {
+    stubFetch(makeResponse(200, "", { "content-type": "text/plain" }));
+    const f = await fetchRobots("https://example.com");
+    expect(f.meta).toEqual({
+      url: "https://example.com/robots.txt",
+      finalUrl: "https://example.com/robots.txt",
+      httpStatus: 200,
+      contentType: "text/plain",
+      redirects: 0,
+    });
+  });
+
+  it("sets meta on a 404 (permissive) response", async () => {
+    stubFetch(makeResponse(404));
+    const f = await fetchRobots("https://example.com");
+    expect(f.meta?.httpStatus).toBe(404);
+    expect(f.meta?.redirects).toBe(0);
+  });
+
+  it("sets meta on a 500 (restrictive) response", async () => {
+    stubFetch(makeResponse(500));
+    const f = await fetchRobots("https://example.com");
+    expect(f.meta?.httpStatus).toBe(500);
+  });
+
+  it("httpStatus is null on network error", async () => {
+    stubFetch(new TypeError("fetch failed"));
+    const f = await fetchRobots("https://example.com");
+    expect(f.meta?.httpStatus).toBe(null);
+  });
+
+  it("counts redirects and reports finalUrl", async () => {
+    stubFetch(
+      makeResponse(301, null, { Location: "https://example.com/r1" }),
+      makeResponse(301, null, { Location: "https://example.com/r2" }),
+      makeResponse(200, ""),
+    );
+    const f = await fetchRobots("https://example.com");
+    expect(f.meta?.redirects).toBe(2);
+    expect(f.meta?.finalUrl).toBe("https://example.com/r2");
+    expect(f.meta?.url).toBe("https://example.com/robots.txt");
+  });
+
+  it("parse() produces a RobotsFile with meta = null", async () => {
+    const { parse } = await import("../src/parser.js");
+    const f = parse("User-agent: *\nDisallow: /\n");
+    expect(f.meta).toBe(null);
   });
 });

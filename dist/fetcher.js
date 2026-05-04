@@ -13,46 +13,55 @@ function resolveOptions(options) {
     maxRedirects: options?.maxRedirects ?? DEFAULT_MAX_REDIRECTS,
     timeoutMs: options?.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     maxSizeBytes: options?.maxSizeBytes ?? MAX_ROBOTS_BYTES,
-    signal: options?.signal,
   };
 }
-function robotsUrl(input) {
-  const u = new URL(typeof input === "string" ? input : input.href);
-  return new URL("/robots.txt", u);
+function robotsUrl(siteUrl) {
+  return new URL("/robots.txt", siteUrl);
 }
 async function fetchWithRedirectLimit(initialUrl, opts) {
   let currentUrl = initialUrl;
-  let redirectCount = 0;
+  let redirects = 0;
   while (true) {
-    const timeoutSignal = AbortSignal.timeout(opts.timeoutMs);
-    const signal =
-      opts.signal !== undefined ? AbortSignal.any([timeoutSignal, opts.signal]) : timeoutSignal;
     let response;
     try {
       response = await globalThis.fetch(currentUrl.href, {
         redirect: "manual",
         headers: { "User-Agent": opts.userAgent },
-        signal,
+        signal: AbortSignal.timeout(opts.timeoutMs),
       });
     } catch {
-      return { ok: false };
+      return {
+        response: null,
+        finalUrl: currentUrl.href,
+        httpStatus: null,
+        redirects,
+      };
     }
     const { status } = response;
     if (status >= 300 && status < 400) {
-      if (redirectCount >= opts.maxRedirects) {
-        return { ok: false };
+      if (redirects >= opts.maxRedirects) {
+        return { response: null, finalUrl: currentUrl.href, httpStatus: status, redirects };
       }
       const location = response.headers.get("Location");
-      if (location === null) return { ok: false };
-      try {
-        currentUrl = new URL(location, currentUrl);
-      } catch {
-        return { ok: false };
+      if (location === null) {
+        return { response: null, finalUrl: currentUrl.href, httpStatus: status, redirects };
       }
-      redirectCount++;
+      let nextUrl;
+      try {
+        nextUrl = new URL(location, currentUrl);
+      } catch {
+        return { response: null, finalUrl: currentUrl.href, httpStatus: status, redirects };
+      }
+      currentUrl = nextUrl;
+      redirects++;
       continue;
     }
-    return { ok: true, response };
+    return {
+      response,
+      finalUrl: currentUrl.href,
+      httpStatus: status,
+      redirects,
+    };
   }
 }
 async function readBodyUpToLimit(response, maxBytes) {
@@ -88,21 +97,30 @@ async function readBodyUpToLimit(response, maxBytes) {
   }
   return decoder.decode(combined);
 }
-export async function fetchRobots(url, options) {
+export async function fetchRobots(siteUrl, options) {
   const opts = resolveOptions(options);
-  const targetUrl = robotsUrl(url);
+  const targetUrl = robotsUrl(siteUrl);
   const outcome = await fetchWithRedirectLimit(targetUrl, opts);
-  if (!outcome.ok) {
-    return RobotsFile.createRestrictive();
+  const baseMeta = {
+    url: targetUrl.href,
+    finalUrl: outcome.finalUrl,
+    httpStatus: outcome.httpStatus,
+    redirects: outcome.redirects,
+  };
+  if (outcome.response === null) {
+    const meta = { ...baseMeta, contentType: null };
+    return RobotsFile.createRestrictive(meta);
   }
   const { response } = outcome;
+  const contentType = response.headers.get("content-type");
+  const meta = { ...baseMeta, contentType };
   const { status } = response;
   if (status >= 400 && status < 500) {
-    return RobotsFile.createPermissive();
+    return RobotsFile.createPermissive(meta);
   }
   if (status < 200 || status >= 300) {
-    return RobotsFile.createRestrictive();
+    return RobotsFile.createRestrictive(meta);
   }
   const content = await readBodyUpToLimit(response, opts.maxSizeBytes);
-  return new RobotsFile(parseContent(content));
+  return new RobotsFile(parseContent(content), meta);
 }
