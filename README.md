@@ -9,7 +9,7 @@ Supports the core RFC 9309 standard plus common extensions: `Sitemap`, `LLMS`, a
 ## Installation
 
 ```sh
-npm install robots-txt-parser
+npm install github:SteveVaneeckhout/robotstxt-parser
 ```
 
 ## Quick start
