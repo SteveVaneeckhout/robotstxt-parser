@@ -9,7 +9,7 @@ Supports the core RFC 9309 standard plus common extensions: `Sitemap`, `LLMS`, a
 ## Installation
 
 ```sh
-npm install robots-txt-parser
+npm install github:SteveVaneeckhout/robotstxt-parser
 ```
 
 ## Quick start
@@ -101,6 +101,19 @@ const robots = parse("LLMS: https://example.com/llms.txt\n...");
 robots.getExtensionValues("llms"); // ['https://example.com/llms.txt']
 ```
 
+#### `getExtensionKeys(): string[]`
+
+Returns the keys of all non-standard fields found in the file (lowercased). Use this to discover which extensions are present before reading their values.
+
+```ts
+const robots = parse("LLMS: https://example.com/llms.txt\nX-Custom: a\n...");
+robots.getExtensionKeys(); // ['llms', 'x-custom']
+
+for (const key of robots.getExtensionKeys()) {
+  console.log(key, robots.getExtensionValues(key));
+}
+```
+
 #### `groups: readonly Group[]`
 
 The raw parsed groups, each containing `userAgents: string[]` and `rules: Rule[]`. Useful for introspecting the full structure of the file.
@@ -166,7 +179,7 @@ Paths are normalised before matching per RFC 3986:
 
 ## Extensions
 
-Non-standard fields are collected and accessible via `getExtensionValues()`:
+Non-standard fields are collected and accessible via `getExtensionValues()`. Use `getExtensionKeys()` to discover which extension fields a parsed file contains:
 
 ```
 Sitemap: https://example.com/sitemap.xml   → getSitemaps()

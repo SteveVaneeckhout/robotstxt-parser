@@ -75,6 +75,10 @@ export class RobotsFile {
     return [...(this.#data.extensions.get(key.toLowerCase()) ?? [])];
   }
 
+  getExtensionKeys(): string[] {
+    return [...this.#data.extensions.keys()];
+  }
+
   get groups(): readonly Group[] {
     return this.#data.groups;
   }

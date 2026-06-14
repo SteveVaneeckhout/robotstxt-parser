@@ -195,6 +195,35 @@ describe("RobotsFile.getExtensionValues()", () => {
   });
 });
 
+describe("RobotsFile.getExtensionKeys()", () => {
+  it("returns all extension keys present in the file", () => {
+    const f = new RobotsFile(
+      makeData({
+        extensions: new Map([
+          ["llms", ["https://example.com/llms.txt"]],
+          ["x-custom", ["a", "b"]],
+        ]),
+      }),
+    );
+    expect(f.getExtensionKeys()).toEqual(["llms", "x-custom"]);
+  });
+
+  it("returns an empty array when there are no extensions", () => {
+    expect(new RobotsFile(makeData()).getExtensionKeys()).toEqual([]);
+  });
+
+  it("returns a copy — mutating the result does not affect internal state", () => {
+    const f = new RobotsFile(
+      makeData({
+        extensions: new Map([["foo", ["bar"]]]),
+      }),
+    );
+    const keys = f.getExtensionKeys();
+    keys.push("injected");
+    expect(f.getExtensionKeys()).toEqual(["foo"]);
+  });
+});
+
 describe("RobotsFile.groups", () => {
   it("exposes the parsed groups", () => {
     const groups = [{ userAgents: ["*"], rules: [{ type: "disallow" as const, pattern: "/" }] }];
