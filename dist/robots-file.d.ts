@@ -12,6 +12,7 @@ export declare class RobotsFile {
   isAllowed(userAgent: string, url: string | URL): boolean;
   getSitemaps(): string[];
   getExtensionValues(key: string): string[];
+  getExtensionKeys(): string[];
   get groups(): readonly Group[];
   get isPermissive(): boolean;
   get isRestrictive(): boolean;
