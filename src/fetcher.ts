@@ -140,6 +140,14 @@ export async function fetchRobots(siteUrl: string, options?: FetchOptions): Prom
 
   if (outcome.response === null) {
     const meta: FetchMeta = { ...baseMeta, contentType: null };
+    // A redirect chain that ran past the limit, or one we could not follow,
+    // still means the server answered with a 3xx rather than failing. RFC 9309
+    // §2.3.1.2 says to assume the file is "unavailable" in that case, and
+    // §2.3.1.3 makes an unavailable robots.txt permissive. Only a genuinely
+    // unreachable server -- no status at all -- disallows everything.
+    if (outcome.httpStatus !== null) {
+      return RobotsFile.createPermissive(meta);
+    }
     return RobotsFile.createRestrictive(meta);
   }
 

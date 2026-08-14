@@ -137,36 +137,55 @@ describe("fetchRobots – redirects", () => {
     expect(f.isAllowed("anybot", "https://example.com/page")).toBe(false);
   });
 
-  it("returns restrictive when redirect count exceeds maxRedirects", async () => {
+  // RFC 9309 §2.3.1.2: once the redirect limit is passed the file counts as
+  // "unavailable", and §2.3.1.3 makes an unavailable robots.txt permissive.
+  // The server did answer -- with a 3xx -- so it is not "unreachable".
+  it("returns permissive when redirect count exceeds maxRedirects", async () => {
     const redirect = makeResponse(301, null, { Location: "https://example.com/robots.txt" });
     stubFetch(redirect, redirect, redirect, redirect, redirect, redirect);
     const f = await fetchRobots("https://example.com");
-    expect(f.isRestrictive).toBe(true);
+    expect(f.isPermissive).toBe(true);
+    expect(f.isRestrictive).toBe(false);
+    expect(f.isAllowed("anybot", "https://example.com/page")).toBe(true);
+    expect(f.meta?.httpStatus).toBe(301);
   });
 
-  it("returns restrictive when Location header is missing", async () => {
+  it("returns permissive when Location header is missing", async () => {
     stubFetch(makeResponse(301));
     const f = await fetchRobots("https://example.com");
-    expect(f.isRestrictive).toBe(true);
+    expect(f.isPermissive).toBe(true);
+    expect(f.isRestrictive).toBe(false);
   });
 
-  it("returns restrictive when Location header contains an invalid URL", async () => {
+  it("returns permissive when Location header contains an invalid URL", async () => {
     stubFetch(makeResponse(301, null, { Location: "http:// spaces.com" }));
     const f = await fetchRobots("https://example.com");
-    expect(f.isRestrictive).toBe(true);
+    expect(f.isPermissive).toBe(true);
+    expect(f.isRestrictive).toBe(false);
   });
 
   it("respects custom maxRedirects option", async () => {
     const redirect = makeResponse(301, null, { Location: "https://example.com/robots.txt" });
     stubFetch(redirect, redirect, redirect);
     const f = await fetchRobots("https://example.com", { maxRedirects: 2 });
-    expect(f.isRestrictive).toBe(true);
+    expect(f.isPermissive).toBe(true);
+    expect(f.meta?.redirects).toBe(2);
   });
 
   it("maxRedirects: 0 disables redirect following", async () => {
     stubFetch(makeResponse(301, null, { Location: "https://example.com/robots.txt" }));
     const f = await fetchRobots("https://example.com", { maxRedirects: 0 });
+    expect(f.isPermissive).toBe(true);
+    expect(f.meta?.redirects).toBe(0);
+  });
+
+  // §2.3.1.4: a server that never answers is "unreachable", which is the one
+  // case that still disallows everything.
+  it("returns restrictive when the request fails outright", async () => {
+    stubFetch(new Error("ECONNREFUSED"));
+    const f = await fetchRobots("https://example.com");
     expect(f.isRestrictive).toBe(true);
+    expect(f.meta?.httpStatus).toBeNull();
   });
 });
 

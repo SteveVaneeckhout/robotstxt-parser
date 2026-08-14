@@ -9,31 +9,33 @@ const encoder = new TextEncoder();
  * - Invalid or incomplete %XX sequences are left as-is.
  */
 export function normalizePath(raw) {
-  let result = "";
-  let i = 0;
-  while (i < raw.length) {
-    if (raw[i] === "%" && i + 2 < raw.length) {
-      const hex = raw.slice(i + 1, i + 3);
-      if (HEX_RE.test(hex)) {
-        const b = parseInt(hex, 16);
-        if (b <= 0x7f) {
-          const char = String.fromCharCode(b);
-          if (UNRESERVED_PATTERN.test(char)) {
-            result += char;
-          } else {
-            result += "%" + hex.toUpperCase();
-          }
-        } else {
-          result += "%" + hex.toUpperCase();
+    let result = "";
+    let i = 0;
+    while (i < raw.length) {
+        if (raw[i] === "%" && i + 2 < raw.length) {
+            const hex = raw.slice(i + 1, i + 3);
+            if (HEX_RE.test(hex)) {
+                const b = parseInt(hex, 16);
+                if (b <= 0x7f) {
+                    const char = String.fromCharCode(b);
+                    if (UNRESERVED_PATTERN.test(char)) {
+                        result += char;
+                    }
+                    else {
+                        result += "%" + hex.toUpperCase();
+                    }
+                }
+                else {
+                    result += "%" + hex.toUpperCase();
+                }
+                i += 3;
+                continue;
+            }
         }
-        i += 3;
-        continue;
-      }
+        result += raw[i];
+        i++;
     }
-    result += raw[i];
-    i++;
-  }
-  return result;
+    return result;
 }
 /**
  * Matches a robots.txt path pattern against a normalized URL path.
@@ -46,49 +48,52 @@ export function normalizePath(raw) {
  * Uses O(m×n) DP to handle pathological wildcard inputs safely.
  */
 export function matchPattern(pattern, path) {
-  let p = pattern;
-  let mustMatchEnd = false;
-  if (p.endsWith("$")) {
-    mustMatchEnd = true;
-    p = p.slice(0, -1);
-  }
-  const m = p.length;
-  const n = path.length;
-  // Flat (m+1)×(n+1) boolean grid stored as a Uint8Array for efficiency.
-  // Indices are always within [0, m] × [0, n], so no OOB access.
-  const size = (m + 1) * (n + 1);
-  const dp = new Uint8Array(size);
-  const at = (row, col) => row * (n + 1) + col;
-  dp[at(0, 0)] = 1;
-  // A leading '*' can match an empty prefix
-  for (let row = 1; row <= m; row++) {
-    if (p[row - 1] === "*") {
-      // Uint8Array index access is always defined for in-bounds indices
-      dp[at(row, 0)] = dp[at(row - 1, 0)];
-    } else {
-      break;
+    let p = pattern;
+    let mustMatchEnd = false;
+    if (p.endsWith("$")) {
+        mustMatchEnd = true;
+        p = p.slice(0, -1);
     }
-  }
-  for (let row = 1; row <= m; row++) {
-    for (let col = 1; col <= n; col++) {
-      if (p[row - 1] === "*") {
-        dp[at(row, col)] = dp[at(row - 1, col)] !== 0 || dp[at(row, col - 1)] !== 0 ? 1 : 0;
-      } else {
-        dp[at(row, col)] = dp[at(row - 1, col - 1)] !== 0 && p[row - 1] === path[col - 1] ? 1 : 0;
-      }
+    const m = p.length;
+    const n = path.length;
+    // Flat (m+1)×(n+1) boolean grid stored as a Uint8Array for efficiency.
+    // Indices are always within [0, m] × [0, n], so no OOB access.
+    const size = (m + 1) * (n + 1);
+    const dp = new Uint8Array(size);
+    const at = (row, col) => row * (n + 1) + col;
+    dp[at(0, 0)] = 1;
+    // A leading '*' can match an empty prefix
+    for (let row = 1; row <= m; row++) {
+        if (p[row - 1] === "*") {
+            // Uint8Array index access is always defined for in-bounds indices
+            dp[at(row, 0)] = dp[at(row - 1, 0)];
+        }
+        else {
+            break;
+        }
     }
-  }
-  if (mustMatchEnd) {
-    return dp[at(m, n)] !== 0;
-  }
-  // Prefix match: pattern exhausted at any position in path
-  for (let col = 0; col <= n; col++) {
-    if (dp[at(m, col)] !== 0) return true;
-  }
-  return false;
+    for (let row = 1; row <= m; row++) {
+        for (let col = 1; col <= n; col++) {
+            if (p[row - 1] === "*") {
+                dp[at(row, col)] = dp[at(row - 1, col)] !== 0 || dp[at(row, col - 1)] !== 0 ? 1 : 0;
+            }
+            else {
+                dp[at(row, col)] = dp[at(row - 1, col - 1)] !== 0 && p[row - 1] === path[col - 1] ? 1 : 0;
+            }
+        }
+    }
+    if (mustMatchEnd) {
+        return dp[at(m, n)] !== 0;
+    }
+    // Prefix match: pattern exhausted at any position in path
+    for (let col = 0; col <= n; col++) {
+        if (dp[at(m, col)] !== 0)
+            return true;
+    }
+    return false;
 }
 export function patternByteLength(pattern) {
-  return encoder.encode(pattern).byteLength;
+    return encoder.encode(pattern).byteLength;
 }
 /**
  * Finds the best-matching rule for a path from a set of rules.
@@ -96,25 +101,26 @@ export function patternByteLength(pattern) {
  * Returns null if no rule matches.
  */
 export function findBestMatch(rules, path) {
-  let bestRule = null;
-  let bestScore = -1;
-  for (const rule of rules) {
-    if (matchPattern(rule.pattern, path)) {
-      const score = patternByteLength(rule.pattern);
-      if (score > bestScore) {
-        bestScore = score;
-        bestRule = rule;
-      } else if (score === bestScore && rule.type === "allow" && bestRule?.type === "disallow") {
-        bestRule = rule;
-      }
+    let bestRule = null;
+    let bestScore = -1;
+    for (const rule of rules) {
+        if (matchPattern(rule.pattern, path)) {
+            const score = patternByteLength(rule.pattern);
+            if (score > bestScore) {
+                bestScore = score;
+                bestRule = rule;
+            }
+            else if (score === bestScore && rule.type === "allow" && bestRule?.type === "disallow") {
+                bestRule = rule;
+            }
+        }
     }
-  }
-  return bestRule;
+    return bestRule;
 }
 /**
  * Extracts and normalizes the path+query portion of a URL for matching.
  */
 export function extractNormalizedPath(url) {
-  const u = url instanceof URL ? url : new URL(url);
-  return normalizePath(u.pathname + u.search);
+    const u = url instanceof URL ? url : new URL(url);
+    return normalizePath(u.pathname + u.search);
 }

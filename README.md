@@ -52,12 +52,17 @@ Downloads the robots.txt at the root of the given URL's origin — e.g. passing 
 
 HTTP behaviour follows RFC 9309:
 
-| Response             | Result                                           |
-| -------------------- | ------------------------------------------------ |
-| 2xx                  | Parsed normally                                  |
-| 4xx                  | Permissive — `isAllowed` always returns `true`   |
-| 5xx or network error | Restrictive — `isAllowed` always returns `false` |
-| > maxRedirects       | Restrictive                                      |
+| Response                               | Result                                           |
+| -------------------------------------- | ------------------------------------------------ |
+| 2xx                                    | Parsed normally                                  |
+| 4xx                                    | Permissive — `isAllowed` always returns `true`   |
+| 5xx or network error                   | Restrictive — `isAllowed` always returns `false` |
+| > `maxRedirects`, or broken `Location` | Permissive — treated as "unavailable" (§2.3.1.2) |
+
+A redirect chain the fetcher cannot finish still means the server answered, so
+§2.3.1.2 says to treat the file as _unavailable_, which §2.3.1.3 makes
+permissive. Only an unreachable server — no HTTP status at all — disallows
+everything. `meta.httpStatus` tells the two apart.
 
 **`FetchOptions`**
 
@@ -66,7 +71,7 @@ HTTP behaviour follows RFC 9309:
 | `userAgent`    | `string` | `'robots-txt-parser/1.0'` | `User-Agent` header sent with the request |
 | `maxRedirects` | `number` | `5`                       | Maximum redirects to follow (0 disables)  |
 | `timeoutMs`    | `number` | `10000`                   | Request timeout in milliseconds           |
-| `maxSizeBytes` | `number` | `512 * 1024`              | Response body cap in bytes                |
+| `maxSizeBytes` | `number` | `500 * 1024`              | Response body cap in bytes                |
 
 ---
 
