@@ -1,9 +1,13 @@
 import { type Rule } from "./types.js";
 /**
- * Normalizes percent-encoding in a path per RFC 3986:
- * - Unreserved ASCII chars (%41-5A, %61-7A, %30-39, %2D, %2E, %5F, %7E) are decoded.
- * - All other %XX sequences are kept encoded with uppercase hex digits.
- * - Invalid or incomplete %XX sequences are left as-is.
+ * Brings a URL path or a robots.txt rule pattern into one canonical form (RFC 3986 and
+ * RFC 9309 §2.2.2), so that equivalent spellings compare equal:
+ * - %XX of an unreserved ASCII char (letters, digits, `-._~`) is decoded.
+ * - All other valid %XX sequences are kept, with uppercase hex digits.
+ * - Unreserved and reserved characters (including `*` and `$`) are kept as-is.
+ * - Every other character — non-ASCII, space, `"`, `<`, `>`, `{`, controls… — is
+ *   percent-encoded as UTF-8, e.g. `é` → `%C3%A9`.
+ * - A `%` that doesn't start a valid %XX sequence is left as-is.
  */
 export declare function normalizePath(raw: string): string;
 /**
@@ -19,8 +23,9 @@ export declare function normalizePath(raw: string): string;
 export declare function matchPattern(pattern: string, path: string): boolean;
 export declare function patternByteLength(pattern: string): number;
 /**
- * Finds the best-matching rule for a path from a set of rules.
- * "Best" = longest pattern (by byte length); Allow beats Disallow on a tie.
+ * Finds the best-matching rule for a normalized path (see `normalizePath`) from a set of
+ * rules. Rule patterns are normalized the same way before matching.
+ * "Best" = longest normalized pattern (by byte length); Allow beats Disallow on a tie.
  * Returns null if no rule matches.
  */
 export declare function findBestMatch(rules: Rule[], path: string): Rule | null;

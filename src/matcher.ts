@@ -1,41 +1,56 @@
-import { UNRESERVED_PATTERN } from "./constants.js";
+import { RESERVED_PATTERN, UNRESERVED_PATTERN } from "./constants.js";
 import { type Rule } from "./types.js";
 
 const HEX_RE = /^[0-9A-Fa-f]{2}$/;
 const encoder = new TextEncoder();
 
+function percentEncode(char: string): string {
+  return Array.from(
+    encoder.encode(char),
+    (b) => `%${b.toString(16).toUpperCase().padStart(2, "0")}`,
+  ).join("");
+}
+
 /**
- * Normalizes percent-encoding in a path per RFC 3986:
- * - Unreserved ASCII chars (%41-5A, %61-7A, %30-39, %2D, %2E, %5F, %7E) are decoded.
- * - All other %XX sequences are kept encoded with uppercase hex digits.
- * - Invalid or incomplete %XX sequences are left as-is.
+ * Brings a URL path or a robots.txt rule pattern into one canonical form (RFC 3986 and
+ * RFC 9309 §2.2.2), so that equivalent spellings compare equal:
+ * - %XX of an unreserved ASCII char (letters, digits, `-._~`) is decoded.
+ * - All other valid %XX sequences are kept, with uppercase hex digits.
+ * - Unreserved and reserved characters (including `*` and `$`) are kept as-is.
+ * - Every other character — non-ASCII, space, `"`, `<`, `>`, `{`, controls… — is
+ *   percent-encoded as UTF-8, e.g. `é` → `%C3%A9`.
+ * - A `%` that doesn't start a valid %XX sequence is left as-is.
  */
 export function normalizePath(raw: string): string {
   let result = "";
   let i = 0;
   while (i < raw.length) {
-    if (raw[i] === "%" && i + 2 < raw.length) {
+    if (raw[i] === "%") {
       const hex = raw.slice(i + 1, i + 3);
       if (HEX_RE.test(hex)) {
-        const b = parseInt(hex, 16);
-        if (b <= 0x7f) {
-          const char = String.fromCharCode(b);
-          if (UNRESERVED_PATTERN.test(char)) {
-            result += char;
-          } else {
-            result += "%" + hex.toUpperCase();
-          }
-        } else {
-          result += "%" + hex.toUpperCase();
-        }
+        const char = String.fromCharCode(parseInt(hex, 16));
+        result += UNRESERVED_PATTERN.test(char) ? char : `%${hex.toUpperCase()}`;
         i += 3;
-        continue;
+      } else {
+        result += "%";
+        i++;
       }
+      continue;
     }
-    result += raw[i];
-    i++;
+    // Step by code point so a surrogate pair is encoded as one 4-byte UTF-8 sequence.
+    const char = String.fromCodePoint(raw.codePointAt(i)!);
+    result +=
+      UNRESERVED_PATTERN.test(char) || RESERVED_PATTERN.test(char) ? char : percentEncode(char);
+    i += char.length;
   }
   return result;
+}
+
+// Rules are immutable once parsed, so each pattern is normalized at most once.
+const normalizedPatterns = new WeakMap<Rule, string>();
+
+function normalizedPattern(rule: Rule): string {
+  return normalizedPatterns.getOrInsertComputed(rule, (r) => normalizePath(r.pattern));
 }
 
 /**
@@ -104,8 +119,9 @@ export function patternByteLength(pattern: string): number {
 }
 
 /**
- * Finds the best-matching rule for a path from a set of rules.
- * "Best" = longest pattern (by byte length); Allow beats Disallow on a tie.
+ * Finds the best-matching rule for a normalized path (see `normalizePath`) from a set of
+ * rules. Rule patterns are normalized the same way before matching.
+ * "Best" = longest normalized pattern (by byte length); Allow beats Disallow on a tie.
  * Returns null if no rule matches.
  */
 export function findBestMatch(rules: Rule[], path: string): Rule | null {
@@ -113,8 +129,9 @@ export function findBestMatch(rules: Rule[], path: string): Rule | null {
   let bestScore = -1;
 
   for (const rule of rules) {
-    if (matchPattern(rule.pattern, path)) {
-      const score = patternByteLength(rule.pattern);
+    const pattern = normalizedPattern(rule);
+    if (matchPattern(pattern, path)) {
+      const score = patternByteLength(pattern);
       if (score > bestScore) {
         bestScore = score;
         bestRule = rule;

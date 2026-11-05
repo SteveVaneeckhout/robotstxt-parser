@@ -159,7 +159,9 @@ You can use this to distinguish a real 200 OK with empty rules from a 404-derive
 | `/path/$`      | End anchor — path must end exactly here                        |
 | `/path/*.pdf$` | Combined — only URLs ending with `.pdf` under `/path/`         |
 
-The **longer** (in bytes) of two matching patterns always wins. When two patterns are equal length, `Allow` beats `Disallow`.
+Before matching, both the URL path and each rule pattern are brought into the same percent-encoded form (RFC 9309 §2.2.2): non-ASCII and other characters not allowed in a URI are percent-encoded as UTF-8, escapes of unreserved characters are decoded, and hex digits are uppercased. So `Disallow: /café`, `Disallow: /caf%C3%A9` and `Disallow: /caf%c3%a9` all block `https://example.com/café`, and `Disallow: /%7Euser` blocks `/~user`. `groups` still returns the patterns as written in the file.
+
+The **longer** (in bytes, after that normalization) of two matching patterns always wins. When two patterns are equal length, `Allow` beats `Disallow`.
 
 ```
 User-agent: *

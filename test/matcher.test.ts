@@ -6,7 +6,79 @@ import {
   normalizePath,
   patternByteLength,
 } from "../src/matcher.js";
+import { parse } from "../src/parser.js";
 import type { Rule } from "../src/types.js";
+
+describe("normalizePath – characters that must be percent-encoded", () => {
+  it("percent-encodes non-ASCII characters as UTF-8", () => {
+    expect(normalizePath("/café")).toBe("/caf%C3%A9");
+    expect(normalizePath("/foo/bar/ツ")).toBe("/foo/bar/%E3%83%84");
+  });
+
+  it("encodes a surrogate pair as a single 4-byte sequence", () => {
+    expect(normalizePath("/😀")).toBe("/%F0%9F%98%80");
+  });
+
+  it("percent-encodes ASCII characters that are neither unreserved nor reserved", () => {
+    expect(normalizePath('/a b"<>{}|\\^`')).toBe("/a%20b%22%3C%3E%7B%7D%7C%5C%5E%60");
+    expect(normalizePath("/\t")).toBe("/%09");
+  });
+
+  it("keeps reserved characters, including the * and $ pattern operators", () => {
+    expect(normalizePath("/:/?#[]@!$&'()*+,;=")).toBe("/:/?#[]@!$&'()*+,;=");
+  });
+
+  it("keeps a bare % followed by non-hex and still encodes what follows", () => {
+    expect(normalizePath("/100%é")).toBe("/100%%C3%A9");
+  });
+
+  it("is idempotent", () => {
+    const once = normalizePath("/café/%7euser?q=a b");
+    expect(normalizePath(once)).toBe(once);
+  });
+});
+
+describe("rule pattern normalization (RFC 9309 §2.2.2)", () => {
+  const allowed = (robots: string, path: string) =>
+    parse(robots).isAllowed("bot", `https://example.com${path}`);
+
+  it.each([
+    // [rule pattern, URL path] pairs from the RFC 9309 §2.2.2 table, plus variants
+    ["/foo/bar?baz=quz", "/foo/bar?baz=quz"],
+    ["/foo/bar/ツ", "/foo/bar/%E3%83%84"],
+    ["/foo/bar/ツ", "/foo/bar/ツ"],
+    ["/foo/bar/%E3%83%84", "/foo/bar/%E3%83%84"],
+    ["/foo/bar/%e3%83%84", "/foo/bar/ツ"],
+    ["/foo/bar/%62%61%7A", "/foo/bar/baz"],
+    ["/%7Euser", "/~user"],
+    ["/café", "/café"],
+    ["/caf*", "/café"],
+    ["/café$", "/caf%c3%a9"],
+  ])("Disallow: %s blocks %s", (pattern, path) => {
+    expect(allowed(`User-agent: *\nDisallow: ${pattern}\n`, path)).toBe(false);
+  });
+
+  it("does not match a different non-ASCII path", () => {
+    expect(allowed("User-agent: *\nDisallow: /café\n", "/cafe")).toBe(true);
+  });
+
+  it("ranks rules by their normalized length", () => {
+    // "/caf%C3%A9" (10 bytes) beats "/caf" (4 bytes), however each rule was spelled.
+    const robots = "User-agent: *\nDisallow: /caf\nAllow: /café\n";
+    expect(allowed(robots, "/café/menu")).toBe(true);
+    expect(allowed(robots, "/cafe")).toBe(false);
+  });
+
+  it("leaves the parsed rule patterns as written in the file", () => {
+    expect(parse("User-agent: *\nDisallow: /café\n").groups[0]?.rules[0]?.pattern).toBe("/café");
+  });
+
+  it("matches the same rule object consistently across calls", () => {
+    const rules: Rule[] = [{ type: "disallow", pattern: "/ツ" }];
+    expect(findBestMatch(rules, "/%E3%83%84")).toBe(rules[0]);
+    expect(findBestMatch(rules, "/%E3%83%84")).toBe(rules[0]);
+  });
+});
 
 describe("normalizePath", () => {
   it("passes through ordinary ASCII characters", () => {
