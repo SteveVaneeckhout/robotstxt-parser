@@ -118,6 +118,53 @@ describe("fetchRobots – network errors", () => {
     const f = await fetchRobots("https://example.com");
     expect(f.isRestrictive).toBe(true);
   });
+
+  it("network error with a non-aborted caller signal still returns a restrictive RobotsFile", async () => {
+    stubFetch(new TypeError("fetch failed"));
+    const f = await fetchRobots("https://example.com", { signal: new AbortController().signal });
+    expect(f.isRestrictive).toBe(true);
+  });
+
+  it("rejects with the caller's abort reason when the caller's signal aborts", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockImplementation(
+          (_url: string, init: RequestInit) =>
+            new Promise((_resolve, reject) =>
+              init.signal?.addEventListener("abort", () => reject(init.signal?.reason)),
+            ),
+        ),
+    );
+    const controller = new AbortController();
+    const reason = new Error("cancelled by caller");
+    const pending = fetchRobots("https://example.com", { signal: controller.signal });
+    controller.abort(reason);
+    await expect(pending).rejects.toBe(reason);
+  });
+
+  it("decodes multi-byte characters split across chunks and strips a BOM", async () => {
+    const bytes = new Uint8Array([
+      0xef,
+      0xbb,
+      0xbf,
+      ...new TextEncoder().encode("User-agent: *\nDisallow: /café\n"),
+    ]);
+    const split = bytes.lastIndexOf(0xc3) + 1; // inside "é"
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(bytes.subarray(0, split));
+        controller.enqueue(bytes.subarray(split));
+        controller.close();
+      },
+    });
+    stubFetch(new Response(body, { status: 200 }));
+    const f = await fetchRobots("https://example.com");
+    expect(f.groups).toEqual([
+      { userAgents: ["*"], rules: [{ type: "disallow", pattern: "/café" }] },
+    ]);
+  });
 });
 
 // ---------------------------------------------------------------------------

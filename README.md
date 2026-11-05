@@ -1,6 +1,6 @@
 # robots-txt-parser
 
-RFC 9309 compliant robots.txt parser and fetcher for Node.js 24+.  
+RFC 9309 compliant robots.txt parser and fetcher for Node.js 26+.  
 Zero runtime dependencies. ESM only. Full TypeScript types included.
 Made with Claude.ai
 
@@ -66,12 +66,13 @@ everything. `meta.httpStatus` tells the two apart.
 
 **`FetchOptions`**
 
-| Option         | Type     | Default                   | Description                               |
-| -------------- | -------- | ------------------------- | ----------------------------------------- |
-| `userAgent`    | `string` | `'robots-txt-parser/1.0'` | `User-Agent` header sent with the request |
-| `maxRedirects` | `number` | `5`                       | Maximum redirects to follow (0 disables)  |
-| `timeoutMs`    | `number` | `10000`                   | Request timeout in milliseconds           |
-| `maxSizeBytes` | `number` | `500 * 1024`              | Response body cap in bytes                |
+| Option         | Type          | Default                   | Description                                                                         |
+| -------------- | ------------- | ------------------------- | ----------------------------------------------------------------------------------- |
+| `userAgent`    | `string`      | `'robots-txt-parser/1.0'` | `User-Agent` header sent with the request                                           |
+| `maxRedirects` | `number`      | `5`                       | Maximum redirects to follow (0 disables)                                            |
+| `timeoutMs`    | `number`      | `10000`                   | Request timeout in milliseconds                                                     |
+| `maxSizeBytes` | `number`      | `500 * 1024`              | Response body cap in bytes                                                          |
+| `signal`       | `AbortSignal` | —                         | Cancels the request (combined with `timeoutMs`); rejects with the signal's `reason` |
 
 ---
 
@@ -199,5 +200,5 @@ X-Custom: value2                               returns ['value1', 'value2']
 
 ## Requirements
 
-- Node.js >= 24.15.0
+- Node.js >= 26.13.0
 - No runtime dependencies

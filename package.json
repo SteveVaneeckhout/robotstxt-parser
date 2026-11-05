@@ -1,6 +1,6 @@
 {
   "name": "robots-txt-parser",
-  "version": "2.1.0",
+  "version": "3.0.0",
   "description": "RFC 9309 compliant robots.txt parser and fetcher for Node.js",
   "files": [
     "dist"
@@ -19,6 +19,8 @@
     "build:watch": "tsc --watch",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -26,13 +28,15 @@
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
-    "@types/node": "^24.12.2",
-    "@vitest/coverage-v8": "^4.1.10",
-    "oxfmt": "^0.63.0",
+    "@types/node": "^26.6.6",
+    "@vitest/coverage-v8": "^5.1.0",
+    "oxfmt": "^0.76.0",
+    "oxlint": "^1.91.0",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.10"
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0"
   },
   "engines": {
-    "node": ">=24.15.0"
+    "node": ">=26.13.0"
   }
 }

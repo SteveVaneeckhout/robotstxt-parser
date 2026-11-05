@@ -13,6 +13,7 @@ interface ResolvedOptions {
   maxRedirects: number;
   timeoutMs: number;
   maxSizeBytes: number;
+  signal: AbortSignal | undefined;
 }
 
 function resolveOptions(options?: FetchOptions): ResolvedOptions {
@@ -21,7 +22,13 @@ function resolveOptions(options?: FetchOptions): ResolvedOptions {
     maxRedirects: options?.maxRedirects ?? DEFAULT_MAX_REDIRECTS,
     timeoutMs: options?.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     maxSizeBytes: options?.maxSizeBytes ?? MAX_ROBOTS_BYTES,
+    signal: options?.signal,
   };
+}
+
+function requestSignal(opts: ResolvedOptions): AbortSignal {
+  const timeout = AbortSignal.timeout(opts.timeoutMs);
+  return opts.signal === undefined ? timeout : AbortSignal.any([timeout, opts.signal]);
 }
 
 function robotsUrl(siteUrl: string): URL {
@@ -48,9 +55,11 @@ async function fetchWithRedirectLimit(
       response = await globalThis.fetch(currentUrl.href, {
         redirect: "manual",
         headers: { "User-Agent": opts.userAgent },
-        signal: AbortSignal.timeout(opts.timeoutMs),
+        signal: requestSignal(opts),
       });
     } catch {
+      // A caller-initiated abort is not "server unreachable": rethrow the caller's reason.
+      opts.signal?.throwIfAborted();
       return {
         response: null,
         finalUrl: currentUrl.href,
@@ -69,10 +78,8 @@ async function fetchWithRedirectLimit(
       if (location === null) {
         return { response: null, finalUrl: currentUrl.href, httpStatus: status, redirects };
       }
-      let nextUrl: URL;
-      try {
-        nextUrl = new URL(location, currentUrl);
-      } catch {
+      const nextUrl = URL.parse(location, currentUrl.href);
+      if (nextUrl === null) {
         return { response: null, finalUrl: currentUrl.href, httpStatus: status, redirects };
       }
       currentUrl = nextUrl;
@@ -93,37 +100,22 @@ async function readBodyUpToLimit(response: Response, maxBytes: number): Promise<
   const { body } = response;
   if (body === null) return "";
 
-  const decoder = new TextDecoder("utf-8", { fatal: false, ignoreBOM: true });
-  const reader = body.getReader();
-  const chunks: Uint8Array[] = [];
+  // A default TextDecoder strips a leading UTF-8 BOM, as Response.text() does.
+  const decoder = new TextDecoder();
+  let text = "";
   let totalBytes = 0;
 
-  try {
-    while (true) {
-      const result = await reader.read();
-      if (result.done) break;
-      const chunk = result.value;
-      const remaining = maxBytes - totalBytes;
-      if (chunk.byteLength <= remaining) {
-        chunks.push(chunk);
-        totalBytes += chunk.byteLength;
-      } else {
-        chunks.push(chunk.slice(0, remaining));
-        totalBytes = maxBytes;
-        break;
-      }
+  // Breaking out of the loop (size cap reached) cancels the stream.
+  for await (const chunk of body) {
+    const remaining = maxBytes - totalBytes;
+    if (chunk.byteLength > remaining) {
+      text += decoder.decode(chunk.subarray(0, remaining), { stream: true });
+      break;
     }
-  } finally {
-    await reader.cancel();
+    text += decoder.decode(chunk, { stream: true });
+    totalBytes += chunk.byteLength;
   }
-
-  const combined = new Uint8Array(totalBytes);
-  let offset = 0;
-  for (const chunk of chunks) {
-    combined.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return decoder.decode(combined);
+  return text + decoder.decode();
 }
 
 export async function fetchRobots(siteUrl: string, options?: FetchOptions): Promise<RobotsFile> {

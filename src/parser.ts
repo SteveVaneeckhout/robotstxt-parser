@@ -126,12 +126,7 @@ export function parseContent(content: string): RobotsFileData {
 
       case "extension": {
         if (token.value) {
-          const existing = extensions.get(token.key);
-          if (existing !== undefined) {
-            existing.push(token.value);
-          } else {
-            extensions.set(token.key, [token.value]);
-          }
+          extensions.getOrInsertComputed(token.key, () => []).push(token.value);
         }
         break;
       }
