@@ -318,3 +318,100 @@ describe("patternByteLength", () => {
     expect(patternByteLength("/café")).toBe(6);
   });
 });
+
+/** The previous O(m×n) DP matcher, kept as an oracle for the linear one. */
+function referenceMatch(pattern: string, path: string): boolean {
+  let p = pattern;
+  let mustMatchEnd = false;
+
+  if (p.endsWith("$")) {
+    mustMatchEnd = true;
+    p = p.slice(0, -1);
+  }
+
+  const m = p.length;
+  const n = path.length;
+
+  // Flat (m+1)×(n+1) boolean grid stored as a Uint8Array for efficiency.
+  // Indices are always within [0, m] × [0, n], so no OOB access.
+  const size = (m + 1) * (n + 1);
+  const dp = new Uint8Array(size);
+  const at = (row: number, col: number) => row * (n + 1) + col;
+
+  dp[at(0, 0)] = 1;
+
+  // A leading '*' can match an empty prefix
+  for (let row = 1; row <= m; row++) {
+    if (p[row - 1] === "*") {
+      // Uint8Array index access is always defined for in-bounds indices
+      dp[at(row, 0)] = dp[at(row - 1, 0)] as number;
+    } else {
+      break;
+    }
+  }
+
+  for (let row = 1; row <= m; row++) {
+    for (let col = 1; col <= n; col++) {
+      if (p[row - 1] === "*") {
+        dp[at(row, col)] = dp[at(row - 1, col)] !== 0 || dp[at(row, col - 1)] !== 0 ? 1 : 0;
+      } else {
+        dp[at(row, col)] = dp[at(row - 1, col - 1)] !== 0 && p[row - 1] === path[col - 1] ? 1 : 0;
+      }
+    }
+  }
+
+  if (mustMatchEnd) {
+    return dp[at(m, n)] !== 0;
+  }
+
+  // Prefix match: pattern exhausted at any position in path
+  for (let col = 0; col <= n; col++) {
+    if (dp[at(m, col)] !== 0) return true;
+  }
+  return false;
+}
+
+/** Small deterministic PRNG (mulberry32) so the differential test is reproducible. */
+function rng(seed: number): () => number {
+  let a = seed;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+describe("matchPattern – agrees with the reference DP matcher", () => {
+  it("on 20,000 random patterns and paths", () => {
+    const next = rng(20261108);
+    const pick = (alphabet: string, max: number) => {
+      let s = "";
+      const len = Math.floor(next() * (max + 1));
+      for (let i = 0; i < len; i++) s += alphabet[Math.floor(next() * alphabet.length)];
+      return s;
+    };
+    for (let i = 0; i < 20_000; i++) {
+      const pattern = pick("/ab*$", 8);
+      const path = pick("/ab$", 10);
+      expect(
+        matchPattern(pattern, path),
+        `${JSON.stringify(pattern)} vs ${JSON.stringify(path)}`,
+      ).toBe(referenceMatch(pattern, path));
+    }
+  });
+});
+
+describe("matchPattern – performance", () => {
+  it("matches 16,000 wildcard rules against a 5,000-character path quickly", () => {
+    // The old DP matcher took more than 10 s here (a 500 KiB robots.txt, Google's size limit).
+    const rules: Rule[] = Array.from({ length: 16_000 }, () => ({
+      type: "disallow",
+      pattern: "/a*b*c*d*e*f*g*h*i*j*$",
+    }));
+    const path = "/" + "ab".repeat(2_500);
+    const start = performance.now();
+    expect(findBestMatch(rules, path)).toBeNull();
+    expect(performance.now() - start).toBeLessThan(1_000);
+  });
+});

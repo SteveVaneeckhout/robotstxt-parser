@@ -18,7 +18,10 @@ export declare function normalizePath(raw: string): string;
  * - '$' end anchor (pattern must match end of path when trailing)
  *
  * Both pattern and path must already be percent-encoding normalized.
- * Uses O(m×n) DP to handle pathological wildcard inputs safely.
+ *
+ * Runs in linear time with no allocation beyond splitting the pattern on '*'. Since '*' is the
+ * only wildcard, matching each literal segment at its leftmost possible position is optimal:
+ * it leaves the longest possible rest of the path for the remaining segments.
  */
 export declare function matchPattern(pattern: string, path: string): boolean;
 export declare function patternByteLength(pattern: string): number;

@@ -61,57 +61,38 @@ function normalizedPattern(rule: Rule): string {
  * - '$' end anchor (pattern must match end of path when trailing)
  *
  * Both pattern and path must already be percent-encoding normalized.
- * Uses O(m×n) DP to handle pathological wildcard inputs safely.
+ *
+ * Runs in linear time with no allocation beyond splitting the pattern on '*'. Since '*' is the
+ * only wildcard, matching each literal segment at its leftmost possible position is optimal:
+ * it leaves the longest possible rest of the path for the remaining segments.
  */
 export function matchPattern(pattern: string, path: string): boolean {
-  let p = pattern;
-  let mustMatchEnd = false;
+  const mustMatchEnd = pattern.endsWith("$");
+  const p = mustMatchEnd ? pattern.slice(0, -1) : pattern;
 
-  if (p.endsWith("$")) {
-    mustMatchEnd = true;
-    p = p.slice(0, -1);
+  const segments = p.split("*");
+  if (segments.length === 1) {
+    return mustMatchEnd ? path === p : path.startsWith(p);
   }
 
-  const m = p.length;
-  const n = path.length;
+  // The part before the first '*' anchors at the start of the path.
+  const first = segments[0]!;
+  if (!path.startsWith(first)) return false;
+  let pos = first.length;
 
-  // Flat (m+1)×(n+1) boolean grid stored as a Uint8Array for efficiency.
-  // Indices are always within [0, m] × [0, n], so no OOB access.
-  const size = (m + 1) * (n + 1);
-  const dp = new Uint8Array(size);
-  const at = (row: number, col: number) => row * (n + 1) + col;
-
-  dp[at(0, 0)] = 1;
-
-  // A leading '*' can match an empty prefix
-  for (let row = 1; row <= m; row++) {
-    if (p[row - 1] === "*") {
-      // Uint8Array index access is always defined for in-bounds indices
-      dp[at(row, 0)] = dp[at(row - 1, 0)] as number;
-    } else {
-      break;
-    }
+  // With '$', the part after the last '*' must end the path, so it is checked separately.
+  const last = segments.length - 1;
+  const middleEnd = mustMatchEnd ? last : segments.length;
+  for (let i = 1; i < middleEnd; i++) {
+    const segment = segments[i]!;
+    const found = path.indexOf(segment, pos);
+    if (found === -1) return false;
+    pos = found + segment.length;
   }
 
-  for (let row = 1; row <= m; row++) {
-    for (let col = 1; col <= n; col++) {
-      if (p[row - 1] === "*") {
-        dp[at(row, col)] = dp[at(row - 1, col)] !== 0 || dp[at(row, col - 1)] !== 0 ? 1 : 0;
-      } else {
-        dp[at(row, col)] = dp[at(row - 1, col - 1)] !== 0 && p[row - 1] === path[col - 1] ? 1 : 0;
-      }
-    }
-  }
-
-  if (mustMatchEnd) {
-    return dp[at(m, n)] !== 0;
-  }
-
-  // Prefix match: pattern exhausted at any position in path
-  for (let col = 0; col <= n; col++) {
-    if (dp[at(m, col)] !== 0) return true;
-  }
-  return false;
+  if (!mustMatchEnd) return true;
+  const tail = segments[last]!;
+  return path.length - tail.length >= pos && path.endsWith(tail);
 }
 
 export function patternByteLength(pattern: string): number {
